@@ -9,7 +9,8 @@ jobs:
   publish:
     if: >
       github.event.workflow_run.conclusion == 'success' &&
-      github.event.workflow_run.event == 'pull_request'
+      github.event.workflow_run.event == 'pull_request' &&
+      github.repository == 'AppImage/appimage.github.io'
     runs-on: ubuntu-latest
     permissions:
       actions: read
@@ -48,10 +49,12 @@ jobs:
           SHORT="${HEAD_SHA::8}"
           COUNT=0
           FALLBACK="run-${{ github.event.workflow_run.id }}"
-          for f in out/screenshots-upload/*.png; do
+          for f in out/*.png out/screenshots-upload/*.png; do
             [ -f "$f" ] || continue
             base="$(basename "$f")"
             appname="${base%.png}"  # Remove .png extension to get app name
+            # sanitize app name for filename safety
+            appname="$(echo "$appname" | tr '[:upper:]' '[:lower:]' | tr -cd 'a-z0-9._-')"
             # Produce deterministic upload name with app name
             PN="${PR_NUMBER:-$FALLBACK}"
             name="pr-${PN}-${SHORT}-${appname}.png"
