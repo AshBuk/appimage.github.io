@@ -69,7 +69,8 @@ jobs:
         shell: bash
         run: |
           gh release view ci-screenshots >/dev/null 2>&1 || \
-          gh release create ci-screenshots --draft -t "CI Screenshots" -n "Automated screenshots from PRs"
+          gh release create ci-screenshots -t "CI Screenshots" -n "Automated screenshots from PRs" --prerelease
+          gh release edit ci-screenshots --draft=false
 
       - name: Upload assets
         if: ${{ steps.prep.outputs.count != '0' }}
