@@ -154,3 +154,73 @@ jobs:
 #              });
 #              core.setFailed("Unable to post screenshot");
 #            }
+
+  publish:
+    name: Publish PR Screenshot (same-run, fork testing)
+    needs: test
+    if: github.event_name == 'pull_request' && github.repository != 'AppImage/appimage.github.io'
+    runs-on: ubuntu-22.04
+    permissions:
+      contents: write
+      pull-requests: write
+    env:
+      GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - name: Download screenshots artifact
+        uses: actions/download-artifact@v4
+        with:
+          name: pr-screenshots
+          path: out
+      - name: Prepare files
+        id: prep
+        shell: bash
+        run: |
+          set -e
+          mkdir -p upload
+          : > upload/list.txt
+          SHORT="${GITHUB_SHA::8}"
+          PR_NUMBER="${{ github.event.pull_request.number }}"
+          COUNT=0
+          for f in out/*.png; do
+            [ -f "$f" ] || continue
+            base="$(basename "$f")"
+            appname="${base%.png}"
+            # sanitize for filename
+            appname="$(echo "$appname" | tr '[:upper:]' '[:lower:]' | tr -cd 'a-z0-9._-')"
+            name="pr-${PR_NUMBER}-${SHORT}-${appname}.png"
+            cp "$f" "upload/${name}"
+            echo "${name}" >> upload/list.txt
+            COUNT=$((COUNT+1))
+          done
+          echo "count=${COUNT}" >> $GITHUB_OUTPUT
+      - name: Ensure release exists
+        if: ${{ steps.prep.outputs.count != '0' }}
+        run: |
+          gh release view ci-screenshots >/dev/null 2>&1 || \
+          gh release create ci-screenshots -t "CI Screenshots" -n "Automated screenshots from PRs" --prerelease
+          gh release edit ci-screenshots --draft=false
+      - name: Upload assets
+        if: ${{ steps.prep.outputs.count != '0' }}
+        run: |
+          while IFS= read -r name; do
+            gh release upload ci-screenshots "upload/${name}" --clobber
+          done < upload/list.txt
+      - name: Comment on PR with images
+        if: ${{ steps.prep.outputs.count != '0' }}
+        run: |
+          repo="${{ github.repository }}"
+          pr="${{ github.event.pull_request.number }}"
+          {
+            echo "Automated screenshot(s) for PR #${pr} (commit ${GITHUB_SHA}):"
+            echo ""
+            while IFS= read -r name; do
+              url="https://github.com/${repo}/releases/download/ci-screenshots/${name}"
+              echo "![Screenshot](${url})"
+              echo ""
+            done < upload/list.txt
+          } > comment.txt
+          gh api "repos/${repo}/issues/${pr}/comments" -F body=@comment.txt
